@@ -2,8 +2,6 @@
 This is a script made entirely to allow the remote install of Printer's, Drivers, and ports on multiple servers.
 
 <#
-Created by Benjamin Knight.
-Version created on 2/4/2019 for Physicians Primary Care.
 
 You can copy this code to your own script, either open it by running through powershell, or open it in the IDE and run it from there.
 
