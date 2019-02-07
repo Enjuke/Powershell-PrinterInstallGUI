@@ -1,0 +1,463 @@
+<#
+Created by BKnight.
+Version created on 2/4/2019 for PPC.
+
+You can copy this code to your own script, either open it by running through powershell, or open it in the IDE and run it from there.
+
+Desired additions or changes in order of time thought of:
+
+Adding Property changes. Such as removing an installed tray or changing which tray is printed to. IE Tray 2 instead of auto select. At the moment it seems the the M608 driver does not allow this.
+
+Add Rename function using:
+
+$Printer = get-printer -Name "" -ComputerName ""
+
+rename-printer -InputObject $Printer -NewName ""
+
+#>
+
+<#
+Completed Work:
+
+8/18
+
+ProgressBar function has been added. Requires the function be called while nested in the foreach loop and the variable $P++ added after the actions have taken place. 
+(++ causes the variable to increment upward -- does so in reverse)
+Added an error message after not knowing why the script didn't do anything on a single server. 
+Since most problems would be due to the driver not being installed I've just added the error to state the driver isn't installed.
+Added Tabs to main window, this will allow me to add more due to having more space to work with.
+Changed the function for Port adding to also house adding a printer.
+Added Port textbox so the port name has to be added now and not just assumed to be the same name as the printer name.
+Added removal options tab to house Remove Printer and Remove Port. May later add Driver Removal as well.
+
+9/18
+
+Added Permissions changes under the Edit Printer Settings Tab
+Added Printerpermissions Function
+
+10/18
+
+Added Clear console button to make a cleaner output when needed
+Completed work on allowing either just the driver to be changed or just the comment to be changed.
+Revamped the tabs, moved adding Port and Printer to their own tab and removed the file options.
+Added the functions to add and remove drivers as well as a button to browse for the .inf
+Redid most of the variables adding either the "Edit" or "AddOrRemove" prefix to make it more clear of what they do.
+
+11/18
+Revamped most of the error messages to better point to the problem.
+Added Location field per request.
+Added messages for performing tasks on one server at a time, due to the progress bar not making the completion of a task clear for only one server.
+Changed the way the progress bar looks, BarAction will make it more detailed.
+
+#>
+
+$inputXML = @"
+<Window x:Name="PrinterMainWindow" x:Class="WpfApp1.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:WpfApp1"
+        mc:Ignorable="d"
+        Title="Printer Editing" Background="#FFB4B4B4" WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Height="413" Width="571">
+    <Grid x:Name="PrinterInnerWindow" Margin="10,10,4,1"
+          >
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <Label Content="Server List" HorizontalAlignment="Left" Margin="417,3,0,0" VerticalAlignment="Top" Height="23" Width="100"/>
+        <Button x:Name="ClearConsoleButton" Content="Clear Console" Margin="417,341,0,-16" RenderTransformOrigin="0.492,-0.888"/>
+        <ListBox x:Name="ServerListBox" HorizontalAlignment="Left" Height="310" VerticalAlignment="Top" Width="127" Margin="417,26,0,0" SelectionMode="Extended" ScrollViewer.CanContentScroll="True">
+            <ListBoxItem Content="Server Name Here"/>
+        </ListBox>
+        <TabControl x:Name="tabControl" HorizontalAlignment="Left" Width="412" Margin="0,3,0,-17" Height="360" VerticalAlignment="Top">
+            <TabItem x:Name="TabPrintSettings" Header="Edit Printer Settings" IsSelected="True">
+                <Grid Background="#FFE5E5E5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="EditPrinterSettingsBtn" Content="Run" Margin="296,301,10,10" RenderTransformOrigin="0.492,-0.888" Width="100" Height="21"/>
+                    <ListBox x:Name="PermissionsListBox" HorizontalAlignment="Left" Height="149" Margin="10,173,0,0" VerticalAlignment="Top" Width="127">
+                        <ListBoxItem Content="PERMISSIONS NAME HERE"/>
+                    </ListBox>
+                    <Label Content="Printer Name" HorizontalAlignment="Left" Margin="159,10,0,0" VerticalAlignment="Top" Height="24" Width="100"/>
+                    <Label Content="Printer Driver" HorizontalAlignment="Left" Margin="281,66,0,0" VerticalAlignment="Top" Height="24" Width="100"/>
+                    <Label Content="Printer Comment" HorizontalAlignment="Left" Margin="281,94,0,0" VerticalAlignment="Top" Height="24" Width="100"/>
+                    <Label Content="Printer Port" HorizontalAlignment="Left" Margin="159,38,0,0" VerticalAlignment="Top" Height="24" Width="100"/>
+                    <Label Content="Permission Groups" HorizontalAlignment="Left" Margin="10,147,0,0" VerticalAlignment="Top" Width="115"/>
+                    <Label Content="Functions" HorizontalAlignment="Left" Margin="160,173,0,0" VerticalAlignment="Top" Padding="0,5,5,5"/>
+                    <TextBox x:Name="PrinterNameBox" HorizontalAlignment="Left" Height="24" TextWrapping="Wrap" VerticalAlignment="Top" Width="144" Margin="10,10,0,0"/>
+                    <TextBox x:Name="PrinterPortBox" HorizontalAlignment="Left" Height="24" Margin="10,38,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="144"/>
+                    <TextBox x:Name="PrinterDriverBox" HorizontalAlignment="Left" Height="24" Margin="10,66,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="266"/>
+                    <TextBox x:Name="PrinterCommentBox" HorizontalAlignment="Left" Height="24" Margin="10,94,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="266"/>
+                    <CheckBox x:Name="AllPrintersCheck" Content="Display All Printers" HorizontalAlignment="Left" Margin="160,204,0,0" VerticalAlignment="Top" AutomationProperties.HelpText="Only one server can be chosen with this option checked."/>
+                    <CheckBox x:Name="PrinterSettingCheck" Content="Current Printer Settings" HorizontalAlignment="Left" Margin="160,224,0,0" VerticalAlignment="Top" Height="15" Width="144"/>
+                    <CheckBox x:Name="PrinterSetCheck" Content="Set Printer Settings" HorizontalAlignment="Left" Margin="160,244,0,0" VerticalAlignment="Top" RenderTransformOrigin="-3.62,0.593" Height="15" Width="120"/>
+                    <CheckBox x:Name="PrinterPermissionCheck" Content="Set Printer Permissions" HorizontalAlignment="Left" Margin="160,264,0,0" VerticalAlignment="Top"/>
+                    <TextBox x:Name="LocationBox" HorizontalAlignment="Left" Height="24" Margin="10,123,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="120"/>
+                    <Label x:Name="label" Content="Printer Location" HorizontalAlignment="Left" Margin="135,123,0,0" VerticalAlignment="Top" Height="24"/>
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="TabAddorRemove" Header="Add or Remove Options" HorizontalAlignment="Left" Height="20" VerticalAlignment="Top">
+                <Grid Background="#FFE5E5E5">
+                    <TextBox x:Name="AddOrRemovePrintNameBox" HorizontalAlignment="Left" Height="24" Margin="10,10,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="144"/>
+                    <TextBox x:Name="AddOrRemovePortNameBox" HorizontalAlignment="Left" Height="24" Margin="10,38,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="144"/>
+                    <TextBox x:Name="AddOrRemoveDriverNameBox" HorizontalAlignment="Left" Height="24" Margin="10,66,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="266"/>
+                    <TextBox x:Name="DriverPathBox" HorizontalAlignment="Left" Height="24" Margin="10,94,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="266"/>
+                    <CheckBox x:Name="AddPrinterPortCheck" Content="Add Port" HorizontalAlignment="Left" Margin="10,267,0,0" VerticalAlignment="Top" RenderTransformOrigin="-3.62,0.593" Height="15" Width="67"/>
+                    <CheckBox x:Name="AddDriverCheck" Content="Add Driver" HorizontalAlignment="Left" Margin="10,287,0,0" VerticalAlignment="Top"/>
+                    <CheckBox x:Name="AddPrinterCheck" Content="Add Printer" HorizontalAlignment="Left" Margin="10,307,0,0" VerticalAlignment="Top"/>
+                    <CheckBox x:Name="RemovePortCheck" Content="Remove Port" HorizontalAlignment="Left" Margin="100,267,0,0" VerticalAlignment="Top"/>
+                    <CheckBox x:Name="RemoveDriverCheck" Content="Remove Driver" HorizontalAlignment="Left" Margin="100,287,0,0" VerticalAlignment="Top"/>
+                    <CheckBox x:Name="RemovePrinterCheck" Content="Remove Printer" HorizontalAlignment="Left" Margin="100,307,0,0" VerticalAlignment="Top"/>
+                    <Button x:Name="DriverBtn" Content="Driver Path Browse" HorizontalAlignment="Left" Margin="281,94,0,0" VerticalAlignment="Top" Width="107" Height="24"/>
+                    <Button x:Name="AddOrRemoveRunBtn" Content="Run" Margin="296,301,10,10" RenderTransformOrigin="0.492,-0.888" Width="100" Height="21"/>
+                    <Label Content="Printer Driver" HorizontalAlignment="Left" Margin="281,66,0,0" VerticalAlignment="Top" Height="24" Padding="5"/>
+                    <Label Content="Printer Name" HorizontalAlignment="Left" Margin="159,10,0,0" VerticalAlignment="Top" Height="24"/>
+                    <Label Content="Printer Port" HorizontalAlignment="Left" Margin="159,38,0,0" VerticalAlignment="Top" Height="24"/>
+                    <Label Content="Functions" HorizontalAlignment="Left" Margin="10,239,0,0" VerticalAlignment="Top" Height="23" Padding="0,5,5,5"/>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+    </Grid>
+</Window>
+"@      
+  
+$inputXML = $inputXML -replace 'mc:Ignorable="d"','' -replace "x:N",'N'  -replace '^<Win.*', '<Window'
+  
+[void][System.Reflection.Assembly]::LoadWithPartialName('presentationframework')
+[xml]$XAML = $inputXML
+#Read XAML
+  
+    $reader=(New-Object System.Xml.XmlNodeReader $xaml)
+  try{$Form=[Windows.Markup.XamlReader]::Load( $reader )}
+catch{Write-Host "Unable to load Windows.Markup.XamlReader. Double-check syntax and ensure .net is installed."}
+  
+#===========================================================================
+# Load XAML Objects In PowerShell
+#===========================================================================
+  
+$xaml.SelectNodes("//*[@Name]") | %{Set-Variable -Name "WPF$($_.Name)" -Value $Form.FindName($_.Name)}
+  
+Function Get-FormVariables{
+if ($global:ReadmeDisplay -ne $true){Write-host "If you need to reference this display again, run Get-FormVariables" -ForegroundColor Yellow;$global:ReadmeDisplay=$true}
+write-host "Found the following interactable elements from our form" -ForegroundColor Cyan
+get-variable WPF*
+}
+  
+#Get-FormVariables
+  
+#===========================================================================
+# Actually make the objects work
+#===========================================================================
+
+<#
+
+Created using Get-ADgroup -Filter * -SearchBase "OU=Printers,OU=groups,OU=Users,DC=YOUR DOMAIN,DC=local" | Format-Table -Property Name,SID
+
+Printers - group01
+
+Below permission were gathered by using  $Variable = (get-printer -computername "one of the terminal servers" -name "Printer with permissions already set" -full).PermissionSDDL
+#>
+
+$Printer01Permissions = ""
+
+#This is the Run Button on the Edit Printer Tab.
+$WPFEditPrinterSettingsBtn.add_click({
+
+$ServerSelection = $WPFServerListBox.SelectedItems #This pulls whatever is selected in the listbox.
+$ServerSelection = @($ServerSelection).ForEach([string]) -replace "System.Windows.Controls.ListBoxItem: ",''
+$ServerhostName = @("$ServerSelection") -replace ' PPC',',PPC' #Replace PPC to match your servers
+
+$EditPrinter = $WPFPrinterNameBox.Text
+$EditPrinterPort = $WPFPrinterPortBox.Text
+$EditDriver = $WPFPrinterDriverBox.Text
+$EditComment = $WPFPrinterCommentBox.Text
+$EditLocation = $WPFLocationBox.Text
+
+$ProgressCount = $ServerSelection.count
+$P = 1
+
+if ($ServerSelection.count -eq 0) {
+
+Write-Host "No server selected, please choose at least one from the server list on the right." -ForegroundColor Red
+
+}
+
+SetPrinter;PrinterPermissions;currentsettings})
+
+
+#This is the Run button on the Add of Remove tab.
+$WPFAddOrRemoveRunBtn.add_click({
+
+$ServerSelection = $WPFServerListBox.SelectedItems #This pulls whatever is selected in the listbox.
+$ServerSelection = @($ServerSelection).ForEach([string]) -replace "System.Windows.Controls.ListBoxItem: ",''
+$ServerhostName = @("$ServerSelection") -replace ' PPC',',PPC' #Replace PPC to match your servers
+
+$AddOrRemovePrinter = $WPFAddOrRemovePrintNameBox.Text
+$AddOrRemovePort = $WPFAddOrRemovePortNameBox.Text
+$AddOrRemoveDriver = $WPFAddOrRemoveDriverNameBox.Text
+$infPath = $WPFDriverPathBox.text
+
+$ProgressCount = $ServerSelection.count
+$P = 1
+
+if ($ServerSelection.count -eq 0) {
+
+Write-Host "No server selected, please choose at least one from the server list on the right." -ForegroundColor Red
+
+}
+
+if ($WPFAddDriverCheck.IsChecked -and $WPFRemoveDriverCheck.IsChecked) {
+
+    Write-host "You can not add and remove at the same time, please choose only one." -ForegroundColor Red
+    return
+    
+}
+
+elseif($WPFAddPrinterPortCheck.IsChecked -and $WPFRemovePortCheck.IsChecked) {
+
+    Write-host "You can not add and remove at the same time, please choose only one." -ForegroundColor Red
+    return
+    
+}
+
+ElseIf ($WPFAddPrinterCheck.IsChecked -and $WPFRemovePrinterCheck.IsChecked) {
+    
+    Write-host "You can not add and remove at the same time, please choose only one." -ForegroundColor Red
+    return
+
+}
+
+
+AddDriver;RemoveDriver;AddPort;RemovePort;AddPrinter;RemovePrinter})
+
+#This opens up a window for the user to browse to the inf file location.
+$WPFDriverBtn.add_Click({
+
+Function get-FileName($InitalDirectory) {
+
+    [System.Reflection.Assembly]::LoadWithPartialName("System.WindowsForms") | Out-Null
+
+    $OpenFileDialog = New-Object System.Windows.Forms.OpenFileDialog
+    $OpenFileDialog.InitialDirectory = $InitalDirectory
+    $OpenFileDialog.Filter = "INF (*.inf) | *.inf"
+    $OpenFileDialog.ShowDialog() | Out-Null
+    $WPFDriverPathBox.Text = $OpenFileDialog.FileName
+
+}
+
+get-FileName})
+
+#This is so the clear console button will give a clean console to the user when pressed.
+$WPFClearConsoleButton.add_click({
+Write-Progress -Completed -Activity "Clearing"
+cls
+
+})
+
+
+#This function provides a progress bar for job counts more than 1 and clears the bar after the job has completed.
+Function ProgressBar { 
+   
+        if ($P -ne $ProgressCount){Write-Progress -Activity "$BarAction" -PercentComplete ($P/$ProgressCount*100) -CurrentOperation "$P / $ProgressCount"}    
+        elseif ($P -eq $ProgressCount){Write-Progress -Activity "$BarAction" -PercentComplete ($P/$ProgressCount*100) -CurrentOperation "$P / $ProgressCount" -Status "Completed"}
+
+    if($ProgressCount -eq 1){Write-Progress -Completed -Activity "Clearing"}
+
+}
+
+#Adds specified driver using rundll32.
+Function AddDriver {
+
+if($WPFAddDriverCheck.IsChecked){
+    $BarAction = "Adding Driver $AddOrRemoveDriver"
+    foreach ($ServerHostName in $ServerSelection) {
+
+    ProgressBar
+    rundll32 printui.dll,PrintUIEntry  /ia /c\\"$ServerHostName" /m "$AddOrRemoveDriver" /h "x64" /f"$InfPath" 
+    if ($ServerSelection.count -eq 1) {Write-host "$AddorRemoveDriver installed on $ServerHostName." -ForegroundColor Cyan}
+    $P++
+        }
+    }
+}
+
+#Removes specified driver.
+Function RemoveDriver {
+
+if($WPFRemoveDriverCheck.IsChecked){
+    $BarAction = "Removing Driver $AddOrRemoveDriver"
+    ForEach ($ServerHostName in $ServerSelection) {
+
+    ProgressBar
+    Remove-PrinterDriver -ComputerName "$ServerHostName" -Name "$AddOrRemoveDriver" -RemoveFromDriverStore
+    if ($ServerSelection.count -eq 1) {Write-Host "$AddorRemoveDriver has been removed from $ServerHostName." -ForegroundColor Cyan}
+    $P++
+        }
+    }
+}
+
+#Adds specified port.
+Function AddPort {
+
+If($WPFAddPrinterPortCheck.IsChecked){
+    $BarAction = "Adding Port $AddOrRemovePort"
+    foreach ($ServerhostName in $ServerSelection) {
+        
+        ProgressBar
+        Add-PrinterPort -ComputerName $ServerHostName -name $AddOrRemovePort -PrinterHostAddress $AddOrRemovePrinter -ErrorVariable ErrorAddPort -ErrorAction Continue
+        if($ErrorAddPort){Write-host "Error above is for $ServerhostName"}
+        if($ServerSelection.count -eq 1){Write-Host "$AddOrRemovePort created on $ServerHostName." -ForegroundColor Cyan}
+        $P++
+
+        }
+    }
+}
+
+#Removes specified port.
+Function RemovePort {
+    
+If ($WPFRemovePortCheck.IsChecked) {
+    $BarAction = "Removing Port $AddOrRemovePort"
+    Foreach ($ServerhostName in $ServerSelection) {
+
+        ProgressBar
+        Remove-PrinterPort -ComputerName $ServerhostName -Name $AddOrRemovePort -ErrorVariable ErrorRemovePort -ErrorAction Continue
+        if($ErrorRemovePort){Write-host "Error above is for $ServerhostName"}
+        if ($ServerSelection.count -eq 1){Write-Host "$AddOrRemovePort removed on $ServerHostName." -ForegroundColor Cyan}
+        $P++
+        }
+    }
+}
+
+#Adds printer and enables the check box for print spooled documents first.
+Function AddPrinter {
+
+if ($WPFAddPrinterCheck.IsChecked) {
+    $BarAction = "Installing Printer $AddOrRemovePrinter"
+    Foreach ($ServerhostName in $ServerSelection) {
+        
+        ProgressBar
+        Add-Printer -ComputerName $ServerHostName -Name $AddOrRemovePrinter -PortName $AddOrRemovePort -DriverName $AddOrRemoveDriver 
+        #PrintSpooled is used to check the "Print Spooled Documents first" option, by default it isn't checked when a new printer is added.
+        $PrintSpooled = Get-CimInstance -ClassName win32_printer -Filter "Name='$AddOrRemovePrinter'" -ComputerName $ServerhostName
+        $PrintSpooled.DoCompleteFirst = $true
+        Set-CimInstance -InputObject $PrintSpooled
+        $P++
+        
+        #Get-CimInstance -ClassName win32_printer -ComputerName "YOURSEVER" -Filter "DoCompletefirst=false" This shows printers that do not have this box checked.
+        if ($ServerSelection.count -eq 1) {Write-Host "$AddorRemovePrinter installed on $ServerHostName." -ForegroundColor Cyan}
+        }
+    }
+
+}
+
+#Removes specified printer.
+Function RemovePrinter {
+
+if ($WPFRemovePrinterCheck.IsChecked) {                   
+    $BarAction = "Uninstalling Printer $AddOrRemovePrinter"
+    Foreach ($ServerhostName in $ServerSelection) {
+
+        ProgressBar
+        Remove-Printer -ComputerName $ServerHostName -Name $AddOrRemovePrinter
+        $P++
+
+    if ($ServerSelection.count -eq 1) {Write-Host "$AddOrRemovePrinter removed on $ServerHostName."-ForegroundColor Cyan}
+
+        }
+    }
+}
+
+#Sets printer settings based on what is entered ie: if a port is entered but not a driver it will skip looking for it.
+Function SetPrinter {
+
+If($WPFPrinterSetCheck.Ischecked) {
+    $BarAction = "Updating $EditPrinter settings"
+    foreach ($ServerhostName in $ServerSelection) {     
+
+        ProgressBar 
+        if($EditPrinterport){set-printer -Name $EditPrinter -ComputerName $ServerHostName -PortName $EditPrinterPort -ErrorVariable ErrorPort -ErrorAction SilentlyContinue}
+        if($EditDriver){set-printer -Name $EditPrinter -ComputerName $ServerHostName -DriverName $EditDriver -ErrorVariable ErrorDriver -ErrorAction SilentlyContinue}
+        if($EditLocation){set-printer -Name $EditPrinter -ComputerName $ServerHostName -Location $EditLocation}
+        if($EditComment){set-printer -Name $EditPrinter -ComputerName $ServerHostName -Comment $EditComment}
+        if ($ServerSelection.count -eq 1){Write-Host "Settings updated for $EditPrinter on $ServerHostName"}
+        $P++
+}
+
+    if ($ErrorDriver) {
+            
+            Write-Error -Exception "Driver $EditDriver is not installed on $ServerHostName. The script has stopped."
+            Write-Progress -Completed -Activity "Process Failed"
+            return
+            
+           }
+
+    if ($ErrorPort) {
+            
+            Write-Error -Exception "Port $EditPrinterPort is not installed on $ServerHostName. The script has stopped."
+            Write-Progress -Completed -Activity "Process Failed"
+            return
+            
+           }
+        }
+    }
+
+#This points the permissions listbox towards the correct permissions.
+Function PrinterPermissions {
+    
+    $PermissionSelect = $WPFPermissionsListBox.SelectedItem -replace "System.Windows.Controls.ListBoxItem: ",'' -replace " - ",'' #This is to remove the spaces
+    $PermissionSelect = @($PermissionSelect).ForEach([string])
+
+    if ($WPFPrinterPermissionCheck.IsChecked) {
+       
+       $BarAction = "Setting $EditPrinter Permissions"
+
+       if ($PermissionSelect -eq "PrintersGroup") {$PermissionSelect = $PrinterPermissions}
+
+       elseif ($PermissionSelect -eq "PrintersGroup") {$PermissionSelect = $PrinterPermissions}
+    
+
+        Foreach ($ServerhostName in $ServerSelection) {
+            ProgressBar
+            Set-Printer -ComputerName $ServerhostName -Name $EditPrinter -PermissionSDDL $PermissionSelect
+            $P++
+
+        if ($ServerSelection.count -eq 1) {Write-Host "Permissions updated for $EditPrinter on $Serverhostname" -ForegroundColor Cyan}
+        }
+    }
+
+}
+
+Function CurrentSettings {
+#CurrentSettings writes the current settings of the printer to the shell.
+if($WPFAllPrintersCheck.IsChecked) {
+    
+    if ($ServerSelection.count -eq 1) {
+
+    get-printer -ComputerName "$ServerSelection" | Sort-Object -Property Name | Format-Table Name,PortName,DriverName | Out-Host 
+
+    }
+
+    Else {
+
+    Write-Error -Exception "To use this function you must select only ONE server." -Category InvalidArgument
+
+    }
+}
+
+if($WPFPrinterSettingCheck.ischecked) {  
+
+    Foreach ($ServerhostName in $ServerSelection) {       
+          
+       Get-Printer -computername $ServerhostName -Name $EditPrinter | format-List -property Name,PortName,DriverName,ComputerName | out-host
+
+        }
+    }
+}
+
+$Form.ShowDialog() | out-null #This line pulls up the GUI
