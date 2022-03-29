@@ -1,8 +1,6 @@
 # Powershell-PrinterInstallGUI
 This is a script made entirely to allow the remote install of Printer's, Drivers, and ports on multiple servers.
 
-<#
-
 You can copy this code to your own script, either open it by running through powershell, or open it in the IDE and run it from there.
 
 Desired additions or changes in order of time thought of:
@@ -49,5 +47,3 @@ Revamped most of the error messages to better point to the problem.
 Added Location field per request.
 Added messages for performing tasks on one server at a time, due to the progress bar not making the completion of a task clear for only one server.
 Changed the way the progress bar looks, BarAction will make it more detailed.
-
-#>
